@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 
 CONTINUE=0
 progress="00:00:00"
@@ -393,23 +393,37 @@ wget --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 url_without_https="${nuevaurl/https:\/\//}"
 
 if [ -d "$url_without_https" ]; then
-    num_episodios=$(grep -oP '<li><span>Episodios:</span> \K\d+' "$url_without_https/index.html" | tail -n 1)
+    token=$(curl -s -c cookies.txt "$nuevaurl" | grep -oP 'meta name="csrf-token" content="\K[^"]+')
+    api_url_base=$(grep -oP "url:\s*'\Khttps://jkanime\.net/ajax/episodes/\d+/?" "$url_without_https/index.html")
+
+    if [ ! -z "$api_url_base" ] && [ ! -z "$token" ]; then
+        
+        json_response=$(curl -s -X POST "${api_url_base}" \
+            -b cookies.txt \
+            -H "X-Requested-With: XMLHttpRequest" \
+            -H "X-CSRF-TOKEN: $token" \
+            --data-urlencode "_token=$token")
+        
+        num_episodios=$(echo "$json_response" | grep -oP '"total":\s*\K\d+')
+    fi
 else
-    num_episodios=$(grep -oP '<li><span>Episodios:</span> \K\d+' "$url_without_https" | tail -n 1)
-fi
+    token=$(curl -s -c cookies.txt "$nuevaurl" | grep -oP 'meta name="csrf-token" content="\K[^"]+')
+    api_url_base=$(grep -oP "url:\s*'\Khttps://jkanime\.net/ajax/episodes/\d+/?" "$url_without_https")
 
-if [ -z "$num_episodios" ] || [ "$num_episodios" -eq 0 ]; then
-    titulo_anime=$(grep -oP '<title>\K[^|-]+' "$url_without_https" | sed 's/ $//')
+    if [ ! -z "$api_url_base" ] && [ ! -z "$token" ]; then
+        
+        json_response=$(curl -s -X POST "${api_url_base}" \
+            -b cookies.txt \
+            -H "X-Requested-With: XMLHttpRequest" \
+            -H "X-CSRF-TOKEN: $token" \
+            --data-urlencode "_token=$token")
 
-    num_episodios=$(curl -s -X POST https://graphql.anilist.co \
-        -H 'Content-Type: application/json' \
-        --data "{ \"query\": \"{ Media(search: \\\"$titulo_anime\\\", type: ANIME) { nextAiringEpisode { episode } } }\" }" \
-        | grep -oP '"episode":\s*\K\d+')
-    
-    if [ ! -z "$num_episodios" ]; then
-        num_episodios=$((num_episodios - 1))
+        num_episodios=$(echo "$json_response" | grep -oP '"total":\s*\K\d+')
     fi
 fi
+
+[ -f cookies.txt ] && rm cookies.txt
+
 clear
 echo -e "Anime: $GREEN $titulo_elegido $WHITE"
   last_cap=$(python3 - <<END
@@ -454,11 +468,20 @@ fi
 
 
 echo -e "Ultimo episodio visto: $last_cap"
+
+
+CONTENIDO=$(curl -s -L "$nuevaurl")
+
+if [ -z "$num_episodios" ]; then
+    num_episodios=0
+fi
+
 if [ -z "$num_episodios" ]; then
   echo -e "Enlace ${CYAN}$nuevaurl${NC} no válido. Por favor ve a ${GREEN} https://github.com/Zhuchii/ani-es ${NC} y abre un issue especificando el enlace y el anime que estabas intentando ver. Lo corregiré y actualizaré el script ;)"
   echo "$url_without_https"
   exit
 fi
+
 
 
 if [ "$CONTINUE" == 1 ]; then
@@ -713,3 +736,4 @@ videocap $capurl
 
 
 main
+
